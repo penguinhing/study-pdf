@@ -94,12 +94,20 @@
                 const container = document.querySelector('.canvas-wrapper');
                 const containerWidth = container.clientWidth;
 
+                // 디바이스 픽셀 비율 적용 (고해상도 대응)
+                const pixelRatio = window.devicePixelRatio || 1;
+
                 const viewport = page.getViewport({ scale: 1 });
-                const scale = containerWidth / viewport.width;
+                const scale = (containerWidth / viewport.width) * pixelRatio;
                 const scaledViewport = page.getViewport({ scale: scale });
 
+                // 실제 캔버스 크기는 픽셀 비율만큼 크게
                 canvas.height = scaledViewport.height;
                 canvas.width = scaledViewport.width;
+
+                // CSS 크기는 원래 크기로
+                canvas.style.width = containerWidth + 'px';
+                canvas.style.height = (scaledViewport.height / pixelRatio) + 'px';
 
                 const renderContext = {
                     canvasContext: ctx,

@@ -20,6 +20,85 @@ body {
     padding: 20px;
 }
 
+/* 모바일 뷰어 최적화 */
+@media (max-width: 767px) {
+    .container {
+        padding: 5px;
+    }
+
+    body {
+        background: #fff;
+    }
+
+    .viewer-container {
+        background: white;
+        border-radius: 0;
+        padding: 5px;
+        box-shadow: none;
+    }
+
+    .pdf-info {
+        padding: 8px 10px;
+        margin-bottom: 5px;
+        font-size: 12px;
+    }
+
+    .filename {
+        font-size: 12px;
+        max-width: 60%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .page-info {
+        font-size: 12px;
+    }
+
+    .canvas-wrapper {
+        margin-bottom: 5px;
+        padding: 0;
+        background: white;
+        border-radius: 0;
+    }
+
+    .controls {
+        padding: 8px;
+        margin-bottom: 0;
+    }
+
+    .page-display {
+        font-size: 14px;
+        min-width: 60px;
+    }
+
+    .btn-control {
+        padding: 8px 15px;
+        font-size: 14px;
+    }
+
+    .viewer-notice {
+        display: none;
+    }
+
+    .viewer-header {
+        padding: 8px 10px;
+        margin-bottom: 5px;
+        background: #667eea;
+        border-radius: 0;
+    }
+
+    .viewer-header h1 {
+        font-size: 16px;
+        margin-bottom: 0;
+    }
+
+    .connection-status {
+        font-size: 11px;
+        padding: 5px 10px;
+    }
+}
+
 /* 헤더 스타일 */
 h1 {
     color: #fff;

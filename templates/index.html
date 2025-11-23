@@ -3,12 +3,64 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>PDF Viewer</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        /* 가로모드 권장 메시지 */
+        .rotate-message {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #667eea;
+            color: white;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 9999;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .rotate-message.show {
+            display: flex;
+        }
+
+        .rotate-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: rotate 2s infinite;
+        }
+
+        @keyframes rotate {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(90deg); }
+        }
+
+        .rotate-message h2 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .rotate-message p {
+            font-size: 16px;
+        }
+    </style>
 </head>
 <body>
+    <!-- 세로모드 경고 메시지 -->
+    <div class="rotate-message" id="rotateMessage">
+        <div class="rotate-icon">📱</div>
+        <h2>화면을 가로로 회전해주세요</h2>
+        <p>더 나은 PDF 보기 환경을 위해<br>가로 모드를 권장합니다</p>
+    </div>
     <div class="container">
         <div class="viewer-header">
             <h1>실시간 PDF 뷰어</h1>
@@ -233,6 +285,51 @@
                 }
             }, 250);
         });
+
+        // 화면 방향 제어 및 감지
+        function checkOrientation() {
+            const rotateMessage = document.getElementById('rotateMessage');
+
+            // 모바일 기기에서만 작동
+            if (window.innerWidth <= 767) {
+                // 세로 모드인 경우 경고 표시
+                if (window.innerHeight > window.innerWidth) {
+                    rotateMessage.classList.add('show');
+                } else {
+                    rotateMessage.classList.remove('show');
+                }
+            } else {
+                rotateMessage.classList.remove('show');
+            }
+        }
+
+        // 가로모드로 자동 회전 시도 (지원되는 브라우저에서만)
+        async function lockToLandscape() {
+            try {
+                // Screen Orientation API 지원 확인
+                if (screen.orientation && screen.orientation.lock) {
+                    await screen.orientation.lock('landscape');
+                    console.log('화면이 가로모드로 고정되었습니다.');
+                }
+            } catch (error) {
+                console.log('자동 화면 회전이 지원되지 않습니다. 사용자가 수동으로 회전해주세요.');
+                // 자동 회전이 안 되면 메시지로 유도
+                checkOrientation();
+            }
+        }
+
+        // 페이지 로드 시 실행
+        window.addEventListener('load', function() {
+            // 모바일 기기인 경우 가로모드 시도
+            if (window.innerWidth <= 767) {
+                lockToLandscape();
+            }
+            checkOrientation();
+        });
+
+        // 화면 방향 변경 감지
+        window.addEventListener('orientationchange', checkOrientation);
+        window.addEventListener('resize', checkOrientation);
     </script>
 </body>
 </html>

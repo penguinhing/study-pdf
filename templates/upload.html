@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Upload</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="upload-container">
+            <h1>PDF 파일 업로드</h1>
+            <form method="POST" enctype="multipart/form-data" class="upload-form">
+                <div class="file-input-wrapper">
+                    <input type="file" name="file" id="file" accept=".pdf" required>
+                    <label for="file" class="file-label">
+                        <span class="file-icon">📄</span>
+                        <span class="file-text">PDF 파일 선택</span>
+                    </label>
+                </div>
+                <button type="submit" class="btn btn-primary">업로드 및 공유 시작</button>
+            </form>
+            <div class="info-box">
+                <p>업로드한 PDF는 관리자 페이지에서 제어할 수 있습니다.</p>
+                <p>최대 파일 크기: 50MB</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('file');
+        const fileText = document.querySelector('.file-text');
+
+        fileInput.addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                fileText.textContent = e.target.files[0].name;
+            } else {
+                fileText.textContent = 'PDF 파일 선택';
+            }
+        });
+    </script>
+</body>
+</html>

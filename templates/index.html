@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Viewer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="viewer-header">
+            <h1>실시간 PDF 뷰어</h1>
+            <div class="connection-status">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">연결 중...</span>
+            </div>
+        </div>
+
+        <div id="contentArea">
+            {% if filename %}
+            <div class="viewer-container">
+                <div class="pdf-info">
+                    <span class="filename" id="pdfFilename">{{ filename }}</span>
+                    <span class="page-info">
+                        페이지: <span id="currentPage">{{ page }}</span> / <span id="totalPages">-</span>
+                    </span>
+                </div>
+
+                <div class="canvas-wrapper">
+                    <canvas id="pdfCanvas"></canvas>
+                </div>
+
+                <div class="viewer-notice">
+                    관리자가 페이지를 변경하면 자동으로 동기화됩니다
+                </div>
+            </div>
+            {% else %}
+            <div class="no-pdf">
+                <p>현재 공유 중인 PDF가 없습니다.</p>
+                <p>관리자가 PDF를 업로드할 때까지 대기해주세요.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        // PDF.js worker 설정
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // Socket.IO 연결
+        const socket = io();
+
+        let pdfDoc = null;
+        let currentPage = {{ page }};
+        let totalPages = 0;
+        const canvas = document.getElementById('pdfCanvas');
+        const ctx = canvas ? canvas.getContext('2d') : null;
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+
+        // PDF 로드 함수
+        function loadPDF(filename, page) {
+            if (!filename) {
+                showNoPDF();
+                return;
+            }
+
+            const pdfUrl = `/static/uploads/${filename}`;
+
+            pdfjsLib.getDocument(pdfUrl).promise.then(function(pdf) {
+                pdfDoc = pdf;
+                totalPages = pdf.numPages;
+
+                // 페이지 정보 업데이트
+                if (document.getElementById('totalPages')) {
+                    document.getElementById('totalPages').textContent = totalPages;
+                }
+
+                renderPage(page);
+            }).catch(function(error) {
+                console.error('PDF 로드 실패:', error);
+                showError('PDF 파일을 로드할 수 없습니다.');
+            });
+        }
+
+        // 페이지 렌더링
+        function renderPage(num) {
+            if (!pdfDoc || !canvas || !ctx) return;
+
+            pdfDoc.getPage(num).then(function(page) {
+                // 모바일 대응: 캔버스 너비를 화면에 맞춤
+                const container = document.querySelector('.canvas-wrapper');
+                const containerWidth = container.clientWidth;
+
+                const viewport = page.getViewport({ scale: 1 });
+                const scale = containerWidth / viewport.width;
+                const scaledViewport = page.getViewport({ scale: scale });
+
+                canvas.height = scaledViewport.height;
+                canvas.width = scaledViewport.width;
+
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: scaledViewport
+                };
+
+                page.render(renderContext);
+            });
+
+            // 페이지 번호 업데이트
+            if (document.getElementById('currentPage')) {
+                document.getElementById('currentPage').textContent = num;
+            }
+            currentPage = num;
+        }
+
+        // PDF 없음 화면 표시
+        function showNoPDF() {
+            const contentArea = document.getElementById('contentArea');
+            contentArea.innerHTML = `
+                <div class="no-pdf">
+                    <p>현재 공유 중인 PDF가 없습니다.</p>
+                    <p>관리자가 PDF를 업로드할 때까지 대기해주세요.</p>
+                </div>
+            `;
+        }
+
+        // 에러 표시
+        function showError(message) {
+            const contentArea = document.getElementById('contentArea');
+            contentArea.innerHTML = `
+                <div class="no-pdf error">
+                    <p>${message}</p>
+                </div>
+            `;
+        }
+
+        // 새 PDF 로드를 위한 HTML 업데이트
+        function updateViewerHTML(filename) {
+            const contentArea = document.getElementById('contentArea');
+            contentArea.innerHTML = `
+                <div class="viewer-container">
+                    <div class="pdf-info">
+                        <span class="filename" id="pdfFilename">${filename}</span>
+                        <span class="page-info">
+                            페이지: <span id="currentPage">1</span> / <span id="totalPages">-</span>
+                        </span>
+                    </div>
+
+                    <div class="canvas-wrapper">
+                        <canvas id="pdfCanvas"></canvas>
+                    </div>
+
+                    <div class="viewer-notice">
+                        관리자가 페이지를 변경하면 자동으로 동기화됩니다
+                    </div>
+                </div>
+            `;
+        }
+
+        // Socket 이벤트 핸들러
+        socket.on('connect', function() {
+            console.log('Socket connected');
+            statusDot.className = 'status-dot connected';
+            statusText.textContent = '연결됨';
+        });
+
+        socket.on('disconnect', function() {
+            console.log('Socket disconnected');
+            statusDot.className = 'status-dot disconnected';
+            statusText.textContent = '연결 끊김';
+        });
+
+        // 접속 시 현재 상태 수신
+        socket.on('current_status', function(data) {
+            console.log('Current status:', data);
+
+            if (data.filename) {
+                // 현재 표시된 파일과 다른 파일이면 HTML 업데이트
+                const currentFilename = document.getElementById('pdfFilename');
+                if (!currentFilename || currentFilename.textContent !== data.filename) {
+                    updateViewerHTML(data.filename);
+                }
+
+                loadPDF(data.filename, data.page);
+            } else {
+                showNoPDF();
+            }
+        });
+
+        // 관리자의 페이지 변경 수신
+        socket.on('update_view', function(data) {
+            console.log('Update view:', data);
+
+            if (!data.filename) {
+                showNoPDF();
+                return;
+            }
+
+            // 파일이 변경된 경우
+            const currentFilename = document.getElementById('pdfFilename');
+            if (!currentFilename || currentFilename.textContent !== data.filename) {
+                updateViewerHTML(data.filename);
+                loadPDF(data.filename, data.page);
+            } else {
+                // 같은 파일의 페이지만 변경된 경우
+                renderPage(data.page);
+            }
+        });
+
+        // 초기 PDF 로드 (서버에서 렌더링된 데이터가 있는 경우)
+        {% if filename %}
+        loadPDF('{{ filename }}', {{ page }});
+        {% endif %}
+
+        // 반응형 대응: 윈도우 리사이즈 시 재렌더링
+        let resizeTimer;
+        window.addEventListener('resize', function() {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(function() {
+                if (pdfDoc && canvas) {
+                    renderPage(currentPage);
+                }
+            }, 250);
+        });
+    </script>
+</body>
+</html>

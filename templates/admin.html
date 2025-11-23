@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - PDF Controller</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="admin-header">
+            <h1>관리자 컨트롤러</h1>
+            <a href="{{ url_for('upload') }}" class="btn btn-secondary">다른 PDF 업로드</a>
+        </div>
+
+        {% if filename %}
+        <div class="viewer-container">
+            <div class="pdf-info">
+                <span class="filename">{{ filename }}</span>
+                <span class="page-info">
+                    페이지: <span id="currentPage">1</span> / <span id="totalPages">-</span>
+                </span>
+            </div>
+
+            <div class="canvas-wrapper">
+                <canvas id="pdfCanvas"></canvas>
+            </div>
+
+            <div class="controls">
+                <button id="prevBtn" class="btn btn-control">◀ 이전</button>
+                <div class="page-display">
+                    <span id="pageNum">1</span> / <span id="pageCount">-</span>
+                </div>
+                <button id="nextBtn" class="btn btn-control">다음 ▶</button>
+            </div>
+        </div>
+        {% else %}
+        <div class="no-pdf">
+            <p>업로드된 PDF가 없습니다.</p>
+            <a href="{{ url_for('upload') }}" class="btn btn-primary">PDF 업로드하기</a>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        // PDF.js worker 설정
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // Socket.IO 연결
+        const socket = io();
+
+        let pdfDoc = null;
+        let currentPage = {{ page }};
+        let totalPages = 0;
+        const canvas = document.getElementById('pdfCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // PDF 로드
+        {% if filename %}
+        const pdfUrl = "{{ url_for('static', filename='uploads/' + filename) }}";
+
+        pdfjsLib.getDocument(pdfUrl).promise.then(function(pdf) {
+            pdfDoc = pdf;
+            totalPages = pdf.numPages;
+            document.getElementById('totalPages').textContent = totalPages;
+            document.getElementById('pageCount').textContent = totalPages;
+            renderPage(currentPage);
+        }).catch(function(error) {
+            console.error('PDF 로드 실패:', error);
+            alert('PDF 파일을 로드할 수 없습니다.');
+        });
+        {% endif %}
+
+        // 페이지 렌더링
+        function renderPage(num) {
+            if (!pdfDoc) return;
+
+            pdfDoc.getPage(num).then(function(page) {
+                // 모바일 대응: 캔버스 너비를 화면에 맞춤
+                const container = document.querySelector('.canvas-wrapper');
+                const containerWidth = container.clientWidth;
+
+                const viewport = page.getViewport({ scale: 1 });
+                const scale = containerWidth / viewport.width;
+                const scaledViewport = page.getViewport({ scale: scale });
+
+                canvas.height = scaledViewport.height;
+                canvas.width = scaledViewport.width;
+
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: scaledViewport
+                };
+
+                page.render(renderContext);
+            });
+
+            // 페이지 번호 업데이트
+            document.getElementById('currentPage').textContent = num;
+            document.getElementById('pageNum').textContent = num;
+            currentPage = num;
+        }
+
+        // 이전 페이지
+        document.getElementById('prevBtn').addEventListener('click', function() {
+            if (currentPage <= 1) return;
+            currentPage--;
+            renderPage(currentPage);
+
+            // 서버로 페이지 변경 이벤트 전송
+            socket.emit('admin_page_change', { page: currentPage });
+        });
+
+        // 다음 페이지
+        document.getElementById('nextBtn').addEventListener('click', function() {
+            if (currentPage >= totalPages) return;
+            currentPage++;
+            renderPage(currentPage);
+
+            // 서버로 페이지 변경 이벤트 전송
+            socket.emit('admin_page_change', { page: currentPage });
+        });
+
+        // 반응형 대응: 윈도우 리사이즈 시 재렌더링
+        let resizeTimer;
+        window.addEventListener('resize', function() {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(function() {
+                if (pdfDoc) {
+                    renderPage(currentPage);
+                }
+            }, 250);
+        });
+
+        // Socket 이벤트
+        socket.on('connect', function() {
+            console.log('Socket connected');
+        });
+
+        socket.on('disconnect', function() {
+            console.log('Socket disconnected');
+        });
+    </script>
+</body>
+</html>

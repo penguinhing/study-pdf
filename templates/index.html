@@ -63,29 +63,25 @@
     </div>
     <div class="container">
         <div class="viewer-header">
-            <h1>실시간 PDF 뷰어</h1>
             <div class="connection-status">
                 <span class="status-dot" id="statusDot"></span>
-                <span id="statusText">연결 중...</span>
+                <span id="statusText">연결 중</span>
             </div>
         </div>
 
         <div id="contentArea">
             {% if filename %}
             <div class="viewer-container">
-                <div class="pdf-info">
-                    <span class="filename" id="pdfFilename">{{ filename }}</span>
-                    <span class="page-info">
-                        페이지: <span id="currentPage">{{ page }}</span> / <span id="totalPages">-</span>
-                    </span>
-                </div>
-
                 <div class="canvas-wrapper">
                     <canvas id="pdfCanvas"></canvas>
                 </div>
 
-                <div class="viewer-notice">
-                    관리자가 페이지를 변경하면 자동으로 동기화됩니다
+                <div class="controls">
+                    <button id="prevBtn" class="btn btn-control">◀</button>
+                    <div class="page-display">
+                        <span id="pageNum">{{ page }}</span> / <span id="maxPage">{{ page }}</span>
+                    </div>
+                    <button id="nextBtn" class="btn btn-control">▶</button>
                 </div>
             </div>
             {% else %}
@@ -106,7 +102,10 @@
 
         let pdfDoc = null;
         let currentPage = {{ page }};
+        let maxAllowedPage = {{ page }}; // 관리자가 진행한 최대 페이지
         let totalPages = 0;
+        let userViewingPage = {{ page }}; // 사용자가 현재 보고 있는 페이지
+        let renderTask = null; // 현재 렌더링 작업 추적
         const canvas = document.getElementById('pdfCanvas');
         const ctx = canvas ? canvas.getContext('2d') : null;
         const statusDot = document.getElementById('statusDot');
@@ -114,21 +113,19 @@
 
         // PDF 로드 함수
         function loadPDF(filename, page) {
+            console.log('loadPDF 호출:', filename, page);
             if (!filename) {
                 showNoPDF();
                 return;
             }
 
             const pdfUrl = `/static/uploads/${filename}`;
+            console.log('PDF URL:', pdfUrl);
 
             pdfjsLib.getDocument(pdfUrl).promise.then(function(pdf) {
+                console.log('PDF 로드 성공, 총 페이지:', pdf.numPages);
                 pdfDoc = pdf;
                 totalPages = pdf.numPages;
-
-                // 페이지 정보 업데이트
-                if (document.getElementById('totalPages')) {
-                    document.getElementById('totalPages').textContent = totalPages;
-                }
 
                 renderPage(page);
             }).catch(function(error) {
@@ -139,16 +136,44 @@
 
         // 페이지 렌더링
         function renderPage(num) {
-            if (!pdfDoc || !canvas || !ctx) return;
+            console.log('renderPage 호출:', num);
+            if (!pdfDoc || !canvas || !ctx) {
+                console.log('렌더링 조건 미충족');
+                return;
+            }
+
+            // 이전 렌더링 작업이 있으면 취소
+            if (renderTask) {
+                console.log('이전 렌더링 취소');
+                renderTask.cancel();
+            }
 
             pdfDoc.getPage(num).then(function(page) {
-                // 모바일 대응: 캔버스 너비를 화면에 맞춤
                 const container = document.querySelector('.canvas-wrapper');
-                const containerWidth = container.clientWidth - 20; // padding 고려
+                if (!container) {
+                    console.log('container 없음');
+                    return;
+                }
 
+                // 모바일 환경 감지
+                const isMobile = window.innerWidth <= 767;
+
+                let scale;
                 const viewport = page.getViewport({ scale: 1 });
-                const scale = containerWidth / viewport.width;
+
+                if (isMobile) {
+                    // 모바일: 화면 너비에 맞춤
+                    const availableWidth = window.innerWidth - 20; // 좌우 패딩 10px씩
+                    scale = availableWidth / viewport.width;
+                } else {
+                    // 데스크톱: 컨테이너에 맞춤
+                    const containerWidth = container.clientWidth - 40;
+                    scale = containerWidth / viewport.width;
+                }
+
                 const scaledViewport = page.getViewport({ scale: scale });
+
+                console.log('스케일:', scale, '캔버스 크기:', scaledViewport.width, 'x', scaledViewport.height);
 
                 // 캔버스 크기 설정
                 canvas.height = scaledViewport.height;
@@ -163,14 +188,42 @@
                     viewport: scaledViewport
                 };
 
-                page.render(renderContext);
+                renderTask = page.render(renderContext);
+                renderTask.promise.then(function() {
+                    console.log('렌더링 완료');
+                    renderTask = null;
+                }).catch(function(err) {
+                    if (err.name === 'RenderingCancelledException') {
+                        console.log('렌더링 취소됨');
+                    } else {
+                        console.error('렌더링 오류:', err);
+                    }
+                    renderTask = null;
+                });
+            }).catch(function(error) {
+                console.error('페이지 로드 오류:', error);
             });
 
             // 페이지 번호 업데이트
-            if (document.getElementById('currentPage')) {
-                document.getElementById('currentPage').textContent = num;
+            if (document.getElementById('pageNum')) {
+                document.getElementById('pageNum').textContent = num;
             }
-            currentPage = num;
+            userViewingPage = num;
+            updateNavigationButtons();
+        }
+
+        // 네비게이션 버튼 상태 업데이트
+        function updateNavigationButtons() {
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+
+            if (prevBtn) {
+                prevBtn.disabled = userViewingPage <= 1;
+            }
+
+            if (nextBtn) {
+                nextBtn.disabled = userViewingPage >= maxAllowedPage;
+            }
         }
 
         // PDF 없음 화면 표시
@@ -199,22 +252,42 @@
             const contentArea = document.getElementById('contentArea');
             contentArea.innerHTML = `
                 <div class="viewer-container">
-                    <div class="pdf-info">
-                        <span class="filename" id="pdfFilename">${filename}</span>
-                        <span class="page-info">
-                            페이지: <span id="currentPage">1</span> / <span id="totalPages">-</span>
-                        </span>
-                    </div>
-
                     <div class="canvas-wrapper">
                         <canvas id="pdfCanvas"></canvas>
                     </div>
 
-                    <div class="viewer-notice">
-                        관리자가 페이지를 변경하면 자동으로 동기화됩니다
+                    <div class="controls">
+                        <button id="prevBtn" class="btn btn-control">◀</button>
+                        <div class="page-display">
+                            <span id="pageNum">1</span> / <span id="maxPage">1</span>
+                        </div>
+                        <button id="nextBtn" class="btn btn-control">▶</button>
                     </div>
                 </div>
             `;
+            setupNavigationButtons();
+        }
+
+        // 네비게이션 버튼 이벤트 설정
+        function setupNavigationButtons() {
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+
+            if (prevBtn) {
+                prevBtn.addEventListener('click', function() {
+                    if (userViewingPage > 1) {
+                        renderPage(userViewingPage - 1);
+                    }
+                });
+            }
+
+            if (nextBtn) {
+                nextBtn.addEventListener('click', function() {
+                    if (userViewingPage < maxAllowedPage) {
+                        renderPage(userViewingPage + 1);
+                    }
+                });
+            }
         }
 
         // Socket 이벤트 핸들러
@@ -235,10 +308,14 @@
             console.log('Current status:', data);
 
             if (data.filename) {
-                // 현재 표시된 파일과 다른 파일이면 HTML 업데이트
-                const currentFilename = document.getElementById('pdfFilename');
-                if (!currentFilename || currentFilename.textContent !== data.filename) {
-                    updateViewerHTML(data.filename);
+                // 최대 허용 페이지 설정
+                maxAllowedPage = data.page;
+                currentPage = data.page;
+
+                // maxPage 표시 업데이트
+                const maxPageElement = document.getElementById('maxPage');
+                if (maxPageElement) {
+                    maxPageElement.textContent = maxAllowedPage;
                 }
 
                 loadPDF(data.filename, data.page);
@@ -256,13 +333,25 @@
                 return;
             }
 
+            // 최대 허용 페이지 업데이트 (관리자가 진행한 페이지까지)
+            if (data.page > maxAllowedPage) {
+                maxAllowedPage = data.page;
+            }
+            currentPage = data.page;
+
+            // maxPage 표시 업데이트
+            const maxPageElement = document.getElementById('maxPage');
+            if (maxPageElement) {
+                maxPageElement.textContent = maxAllowedPage;
+            }
+
             // 파일이 변경된 경우
-            const currentFilename = document.getElementById('pdfFilename');
-            if (!currentFilename || currentFilename.textContent !== data.filename) {
+            if (!pdfDoc) {
                 updateViewerHTML(data.filename);
                 loadPDF(data.filename, data.page);
             } else {
                 // 같은 파일의 페이지만 변경된 경우
+                // 관리자 페이지를 자동으로 따라감
                 renderPage(data.page);
             }
         });
@@ -270,6 +359,7 @@
         // 초기 PDF 로드 (서버에서 렌더링된 데이터가 있는 경우)
         {% if filename %}
         loadPDF('{{ filename }}', {{ page }});
+        setupNavigationButtons();
         {% endif %}
 
         // 반응형 대응: 윈도우 리사이즈 시 재렌더링
@@ -278,7 +368,7 @@
             clearTimeout(resizeTimer);
             resizeTimer = setTimeout(function() {
                 if (pdfDoc && canvas) {
-                    renderPage(currentPage);
+                    renderPage(userViewingPage);
                 }
             }, 250);
         });

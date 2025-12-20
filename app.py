@@ -1,4 +1,5 @@
 import os
+import json
 from flask import Flask, render_template, request, redirect, url_for, send_from_directory
 from flask_socketio import SocketIO, emit
 from werkzeug.utils import secure_filename
@@ -7,14 +8,27 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
+app.config['STATE_FILE'] = 'state.json'
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Server state: 현재 PDF 파일과 페이지 정보
-current_state = {
-    'filename': None,
-    'page': 1
-}
+def load_state():
+    """상태 파일에서 상태 불러오기"""
+    if os.path.exists(app.config['STATE_FILE']):
+        try:
+            with open(app.config['STATE_FILE'], 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            pass
+    return {'filename': None, 'page': 1}
+
+def save_state():
+    """현재 상태를 파일에 저장"""
+    with open(app.config['STATE_FILE'], 'w', encoding='utf-8') as f:
+        json.dump(current_state, f, ensure_ascii=False, indent=2)
+
+current_state = load_state()
 
 # Allowed extensions
 ALLOWED_EXTENSIONS = {'pdf'}
@@ -42,6 +56,7 @@ def upload():
             # 업로드된 파일을 현재 공유 파일로 설정
             current_state['filename'] = filename
             current_state['page'] = 1
+            save_state()  # 상태 저장
 
             # 모든 클라이언트에게 새로운 PDF 로드 알림
             socketio.emit('update_view', {
@@ -91,6 +106,7 @@ def handle_page_change(data):
 
     # 서버 상태 업데이트
     current_state['page'] = page
+    save_state()  # 상태 저장
 
     print(f'Page changed to: {page}')
 
